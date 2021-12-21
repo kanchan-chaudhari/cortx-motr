@@ -1971,11 +1971,8 @@ static int libfab_dummy_msg_rcv_chk(struct m0_fab__buf *fbp)
 			pas_buf = fab_bufhash_htable_lookup(
 				&ma->ftm_bufhash.bht_hash,
 				&token);
-			if (pas_buf != NULL) {
-				// pas_buf->fb_status = 0;
+			if (pas_buf != NULL)
 				libfab_buf_complete(pas_buf);
-			}
-
 			/*
 			 * Repost this buffer to the receive
 			 * queue without generating a callback
