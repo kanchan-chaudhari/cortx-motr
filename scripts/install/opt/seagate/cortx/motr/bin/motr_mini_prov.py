@@ -163,7 +163,7 @@ def validate_motr_rpm(self):
 
     kernel_module = f"/lib/modules/{kernel_ver}/kernel/fs/motr/m0tr.ko"
     self.logger.info(f"Checking for {kernel_module}\n")
-    validate_file(kernel_module)
+    # validate_file(kernel_module)
 
     self.logger.info(f"Checking for {MOTR_SYS_CFG}\n")
     validate_file(MOTR_SYS_CFG)
