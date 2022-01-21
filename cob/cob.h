@@ -271,7 +271,7 @@ struct m0_cob_domain {
 	struct m0_be_btree      cd_namespace;
 	struct m0_be_btree      cd_fileattr_basic;
 	struct m0_be_btree      cd_fileattr_omg;
-	struct m0_be_btree      cd_fileattr_omg;
+	struct m0_be_btree      cd_fileattr_ea;
 	struct m0_be_btree      cd_bytecount;
 } M0_XCA_RECORD M0_XCA_DOMAIN(be);
 
@@ -511,7 +511,7 @@ struct m0_cob_earec {
 
 /** Byte count table key. */
 struct m0_cob_bckey {
-	struct m0_fid     cbk_fid;
+	struct m0_fid     cbk_pfid;
 	uint64_t          cbk_user_id;  /**< User id str? */
 } M0_XCA_RECORD M0_XCA_DOMAIN(be);
 
@@ -847,6 +847,7 @@ M0_INTERNAL void m0_cob_ea_iterator_fini(struct m0_cob_ea_iterator *it);
    the missing fields.
  */
 M0_INTERNAL int m0_cob_bc_lookup(struct m0_cob *cob, struct m0_cob_bckey *bc_key);
+
 /**
    Inserts a record in the bytecount table
 
@@ -855,6 +856,7 @@ M0_INTERNAL int m0_cob_bc_lookup(struct m0_cob *cob, struct m0_cob_bckey *bc_key
  */
 M0_INTERNAL int m0_cob_bc_insert(struct m0_cob *cob, struct m0_cob_bckey *bc_key,
 			         struct m0_cob_bcrec *bc_val, struct m0_be_tx *tx);
+
 /**
    Updates a record in the bytecount table
 
@@ -863,6 +865,7 @@ M0_INTERNAL int m0_cob_bc_insert(struct m0_cob *cob, struct m0_cob_bckey *bc_key
  */
 M0_INTERNAL int m0_cob_bc_update(struct m0_cob *cob, struct m0_cob_bckey *bc_key,
 			         struct m0_cob_bcrec *bc_val, struct m0_be_tx *tx);
+
 /**
  * Init cob iterator on passed @cob and @name as a start position.
  */
@@ -972,6 +975,9 @@ enum m0_cob_op {
 	M0_COB_OP_NAME_ADD,
 	M0_COB_OP_NAME_DEL,
 	M0_COB_OP_NAME_UPDATE,
+	M0_COB_OP_BYTECOUNT_SET,
+	M0_COB_OP_BYTECOUNT_DEL,
+	M0_COB_OP_BYTECOUNT_UPDATE,
 } M0_XCA_ENUM;
 
 M0_INTERNAL void m0_cob_tx_credit(struct m0_cob_domain *dom,

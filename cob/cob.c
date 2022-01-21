@@ -355,9 +355,9 @@ static const struct m0_be_btree_kv_ops cob_ns_ops = {
 /**
    Make bytecount key for iterator. Allocate space for maximal possible name.
 */
-static int m0_cob_max_bckey_make(struct m0_cob_bckey **keyh,
-				 const struct m0_fid  *pver_fid,
-				 uint64_t              user_id)
+M0_UNUSED static int m0_cob_max_bckey_make(struct m0_cob_bckey **keyh,
+					   const struct m0_fid  *pver_fid,
+					   uint64_t              user_id)
 {
 	struct m0_cob_bckey *key;
 
@@ -375,10 +375,10 @@ M0_INTERNAL int m0_cob_bckey_cmp(const struct m0_cob_bckey *k0,
 {
 	int rc;
 
-	M0_PRE(m0_fid_is_set(&k0->cbk_pver_fid));
-	M0_PRE(m0_fid_is_set(&k1->cbk_pver_fid));
+	M0_PRE(m0_fid_is_set(&k0->cbk_pfid));
+	M0_PRE(m0_fid_is_set(&k1->cbk_pfid));
 
-	rc = m0_fid_cmp(&k0->cnk_pfid, &k1->cnk_pfid);
+	rc = m0_fid_cmp(&k0->cbk_pfid, &k1->cbk_pfid);
 	return rc ?: k0->cbk_user_id == k1->cbk_user_id;
 }
 
@@ -392,6 +392,17 @@ static size_t m0_cob_max_bckey_size(void)
 	return sizeof(struct m0_cob_bckey) + M0_COB_NAME_MAX;
 }
 
+// TODO: need to revisit this
+static size_t m0_cob_bckey_size(const struct m0_cob_bckey *key)
+{
+	return sizeof *key;
+}
+
+static size_t m0_cob_bcrec_size(const struct m0_cob_bcrec *rec)
+{
+	return sizeof *rec;
+}
+
 /**
    Bytecount table comparator.
 */
@@ -401,14 +412,16 @@ static int bc_cmp(const void *key0, const void *key1)
 				(const struct m0_cob_bckey *)key1);
 }
 
+// TODO: need to revisit this
 static m0_bcount_t bc_ksize(const void *key)
 {
 	return m0_cob_bckey_size(key);
 }
 
+// TODO: need to revisit this
 static m0_bcount_t bc_vsize(const void *val)
 {
-	return sizeof(struct m0_cob_bcrec);
+	return m0_cob_bcrec_size(val);
 }
 
 static const struct m0_be_btree_kv_ops cob_bc_ops = {
@@ -589,7 +602,7 @@ M0_INTERNAL int m0_cob_domain_credit_add(struct m0_cob_domain          *dom,
 		return M0_ERR(-ENOMEM);
 	m0_be_0type_add_credit(bedom, &m0_be_cob0, cdid_str, &data, cred);
 	M0_BE_ALLOC_CREDIT_PTR(dom, seg, cred);
-	m0_be_btree_create_credit(&dummy, 5 /* XXX */, cred);
+	m0_be_btree_create_credit(&dummy, 6 /* XXX */, cred);
 	m0_free(cdid_str);
 	return M0_RC(0);
 }
@@ -952,18 +965,17 @@ static int cob_ns_lookup(struct m0_cob *cob);
 static int cob_oi_lookup(struct m0_cob *cob);
 static int cob_fab_lookup(struct m0_cob *cob);
 
-M0_INTERNAL int m0_cob_bc_lookup(struct m0_cob *cob, struct m0_cob_bckey *bckey)
+M0_INTERNAL int m0_cob_bc_lookup(struct m0_cob *cob, struct m0_cob_bckey *bc_key)
 {
-	struct m0_buf   key;
-	struct m0_buf   val;
-	int             rc;
+	struct m0_buf key;
+	struct m0_buf val;
+	int           rc;
 
+	M0_PRE(bc_key != NULL &&
+	       m0_fid_is_set(&bc_key->cbk_pfid));
 
-	M0_PRE(bckey != NULL &&
-	       m0_fid_is_set(&bckey->cbk_pver_fid));
-
-	m0_buf_init(&key, bckey, m0_cob_bckey_size(cob->co_bckey));
-	m0_buf_init(&val, &cob->co_bcrec, sizeof cob->co_bcrec);
+	m0_buf_init(&key, bc_key, m0_cob_bckey_size(bc_key));
+	m0_buf_init(&val, &cob->co_bcrec, m0_cob_bcrec_size(cob->co_bcrec));
 
 	rc = cob_table_lookup(&cob->co_dom->cd_bytecount, &key, &val);
 	if (rc == 0) {
@@ -976,15 +988,15 @@ M0_INTERNAL int m0_cob_bc_lookup(struct m0_cob *cob, struct m0_cob_bckey *bckey)
 M0_INTERNAL int m0_cob_bc_insert(struct m0_cob *cob, struct m0_cob_bckey *bc_key,
 			         struct m0_cob_bcrec *bc_val, struct m0_be_tx *tx)
 {
-	struct m0_buf   key;
-	struct m0_buf   val;
-	int             rc;
+	struct m0_buf key;
+	struct m0_buf val;
+	int           rc;
 
 	M0_PRE(bc_key != NULL && bc_val != NULL &&
-	       m0_fid_is_set(&bc_key->cbk_pver_fid));
-
-	m0_buf_init(&key, bc_key, m0_cob_bckey_size(cob->co_bckey));
-	m0_buf_init(&val, bc_val, sizeof cob->co_bcrec);
+	       m0_fid_is_set(&bc_key->cbk_pfid));
+	// TODO: Which size we should be using?
+	m0_buf_init(&key, bc_key, m0_cob_bckey_size(bc_key));
+	m0_buf_init(&val, bc_val, m0_cob_bcrec_size(bc_val));
 
 	rc = cob_table_insert(&cob->co_dom->cd_bytecount, tx, &key, &val);
 	if (rc == 0)
@@ -996,16 +1008,16 @@ M0_INTERNAL int m0_cob_bc_insert(struct m0_cob *cob, struct m0_cob_bckey *bc_key
 M0_INTERNAL int m0_cob_bc_update(struct m0_cob *cob, struct m0_cob_bckey *bc_key,
 			         struct m0_cob_bcrec *bc_val, struct m0_be_tx *tx)
 {
-	struct m0_buf   key;
-	struct m0_buf   val;
-	int             rc;
+	struct m0_buf key;
+	struct m0_buf val;
+	int           rc;
 
 	M0_PRE(bc_key != NULL && bc_val != NULL &&
-	       m0_fid_is_set(&bc_key->cbk_pver_fid));
+	       m0_fid_is_set(&bc_key->cbk_pfid));
 
 
-	m0_buf_init(&key, bc_key, m0_cob_bckey_size(cob->co_bckey));
-	m0_buf_init(&val, bc_val, sizeof cob->co_bcrec);
+	m0_buf_init(&key, bc_key, m0_cob_bckey_size(bc_key));
+	m0_buf_init(&val, bc_val, m0_cob_bcrec_size(bc_val));
 
 	rc = cob_table_update(&cob->co_dom->cd_bytecount, tx, &key, &val);
 	if (rc == 0)
@@ -2092,7 +2104,7 @@ static void cob_table_tx_credit(struct m0_be_btree *tree,
 	m0_bcount_t vsize;
 
 	M0_PRE(M0_IN(t_kvtype, (COB_KVTYPE_OMG, COB_KVTYPE_FAB, COB_KVTYPE_FEA,
-				COB_KVTYPE_NS, COB_KVTYPE_OI)));
+				COB_KVTYPE_NS, COB_KVTYPE_OI, COB_KVTYPE_BC)));
 
 	ksize = kv_size[t_kvtype].s_key;
 	vsize = kv_size[t_kvtype].s_rec;
@@ -2179,7 +2191,7 @@ M0_INTERNAL void m0_cob_tx_credit(struct m0_cob_domain *dom,
 	case M0_COB_OP_BYTECOUNT_UPDATE:
 		TCREDIT(&dom->cd_bytecount, INSERT, BC, accum);
 		TCREDIT(&dom->cd_bytecount, DELETE, BC, accum);
-		TCREDIT(&dom->cd_bytecoubt, UPDATE, BC, accum);
+		TCREDIT(&dom->cd_bytecount, UPDATE, BC, accum);
 		break;
 	default:
 		M0_IMPOSSIBLE("Impossible cob optype");
