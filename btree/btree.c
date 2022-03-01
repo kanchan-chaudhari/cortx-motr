@@ -564,7 +564,7 @@
 #include "be/engine.h"     /** m0_be_engine_tx_size_max() */
 #include "motr/iem.h"       /* M0_MOTR_IEM_DESC */
 #include "be/alloc.h"      /** m0_be_chunk_header_size() */
-
+#include "btree/btree_addb2.h"
 
 #ifndef __KERNEL__
 #include <stdlib.h>
@@ -1469,6 +1469,198 @@ M0_TL_DESCR_DEFINE(ndlist, "node descr list", static, struct nd,
 		   M0_BTREE_ND_LIST_HEAD_MAGIC);
 M0_TL_DEFINE(ndlist, static, struct nd);
 
+struct m0_sm_state_descr btree_states[P_NR] = {
+	[P_INIT] = {
+		.sd_flags   = M0_SDF_INITIAL,
+		.sd_name    = "P_INIT",
+		.sd_allowed = M0_BITS(P_COOKIE, P_SETUP, P_ACT, P_WAITCHECK,
+				      P_TREE_GET, P_DONE),
+	},
+	[P_TREE_GET] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_TREE_GET",
+		.sd_allowed = M0_BITS(P_ACT),
+	},
+	[P_COOKIE] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_COOKIE",
+		.sd_allowed = M0_BITS(P_LOCK, P_SETUP),
+	},
+	[P_SETUP] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_SETUP",
+		.sd_allowed = M0_BITS(P_CLEANUP, P_NEXTDOWN),
+	},
+	[P_LOCKALL] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_LOCKALL",
+		.sd_allowed = M0_BITS(P_SETUP),
+	},
+	[P_DOWN] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_DOWN",
+		.sd_allowed = M0_BITS(P_NEXTDOWN),
+	},
+	[P_NEXTDOWN] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_NEXTDOWN",
+		.sd_allowed = M0_BITS(P_NEXTDOWN, P_ALLOC_REQUIRE,
+				      P_STORE_CHILD, P_SIBLING, P_CLEANUP,
+				      P_LOCK, P_ACT),
+	},
+	[P_SIBLING] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_SIBLING",
+		.sd_allowed = M0_BITS(P_SIBLING, P_LOCK, P_CLEANUP),
+	},
+	[P_ALLOC_REQUIRE] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_ALLOC_REQUIRE",
+		.sd_allowed = M0_BITS(P_ALLOC_STORE, P_LOCK, P_CLEANUP),
+	},
+	[P_ALLOC_STORE] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_ALLOC_STORE",
+		.sd_allowed = M0_BITS(P_ALLOC_REQUIRE, P_ALLOC_STORE, P_LOCK,
+				      P_CLEANUP),
+	},
+	[P_STORE_CHILD] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_STORE_CHILD",
+		.sd_allowed = M0_BITS(P_CHECK, P_CLEANUP, P_DOWN, P_CAPTURE),
+	},
+	[P_LOCK] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_LOCK",
+		.sd_allowed = M0_BITS(P_CHECK, P_MAKESPACE, P_ACT, P_CAPTURE,
+				      P_CLEANUP),
+	},
+	[P_CHECK] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_CHECK",
+		.sd_allowed = M0_BITS(P_CAPTURE, P_MAKESPACE, P_ACT, P_CLEANUP,
+				      P_DOWN),
+	},
+	[P_SANITY_CHECK] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_SANITY_CHECK",
+		.sd_allowed = M0_BITS(P_MAKESPACE, P_ACT, P_CLEANUP),
+	},
+	[P_MAKESPACE] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_MAKESPACE",
+		.sd_allowed = M0_BITS(P_CAPTURE, P_CLEANUP),
+	},
+	[P_ACT] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_ACT",
+		.sd_allowed = M0_BITS(P_CAPTURE, P_CLEANUP, P_NEXTDOWN, P_DONE),
+	},
+	[P_CAPTURE] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_CAPTURE",
+		.sd_allowed = M0_BITS(P_FREENODE, P_CLEANUP),
+	},
+	[P_FREENODE] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_FREENODE",
+		.sd_allowed = M0_BITS(P_CLEANUP, P_FINI),
+	},
+	[P_CLEANUP] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_CLEANUP",
+		.sd_allowed = M0_BITS(P_SETUP, P_LOCKALL, P_FINI),
+	},
+	[P_FINI] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_FINI",
+		.sd_allowed = M0_BITS(P_DONE),
+	},
+	[P_WAITCHECK] = {
+		.sd_flags   = 0,
+		.sd_name    = "P_WAITCHECK",
+		.sd_allowed = M0_BITS(P_WAITCHECK),
+	},
+	[P_DONE] = {
+		.sd_flags   = M0_SDF_TERMINAL,
+		.sd_name    = "P_DONE",
+		.sd_allowed = 0,
+	},
+};
+
+struct m0_sm_trans_descr btree_trans[] = {
+	{ "open/close-init", P_INIT, P_ACT },
+	{ "open/close-act", P_ACT, P_DONE },
+	{ "create-init-tree_get", P_INIT, P_TREE_GET },
+	{ "create-tree_get-act", P_TREE_GET, P_ACT },
+	{ "close/destroy", P_INIT, P_DONE},
+	{ "close-init-timecheck", P_INIT, P_WAITCHECK},
+	{ "close-timecheck-repeat", P_WAITCHECK, P_WAITCHECK},
+	{ "kvop-init-cookie", P_INIT, P_COOKIE },
+	{ "kvop-init", P_INIT, P_SETUP },
+	{ "kvop-cookie-valid", P_COOKIE, P_LOCK },
+	{ "kvop-cookie-invalid", P_COOKIE, P_SETUP },
+	{ "kvop-setup-failed", P_SETUP, P_CLEANUP },
+	{ "kvop-setup-down-fallthrough", P_SETUP, P_NEXTDOWN },
+	{ "kvop-lockall", P_LOCKALL, P_SETUP },
+	{ "kvop-down", P_DOWN, P_NEXTDOWN },
+	{ "kvop-nextdown-repeat", P_NEXTDOWN, P_NEXTDOWN },
+	{ "put-nextdown-next", P_NEXTDOWN, P_ALLOC_REQUIRE },
+	{ "del-nextdown-load", P_NEXTDOWN, P_STORE_CHILD },
+	{ "get-nextdown-next", P_NEXTDOWN, P_LOCK },
+	{ "truncate-nextdown-act", P_NEXTDOWN, P_ACT },
+	{ "iter-nextdown-sibling", P_NEXTDOWN, P_SIBLING },
+	{ "kvop-nextdown-failed", P_NEXTDOWN, P_CLEANUP },
+	{ "iter-sibling-repeat", P_SIBLING, P_SIBLING },
+	{ "iter-sibling-next", P_SIBLING, P_LOCK },
+	{ "iter-sibling-failed", P_SIBLING, P_CLEANUP },
+	{ "put-alloc-load", P_ALLOC_REQUIRE, P_ALLOC_STORE },
+	{ "put-alloc-next", P_ALLOC_REQUIRE, P_LOCK },
+	{ "put-alloc-fail", P_ALLOC_REQUIRE, P_CLEANUP },
+	{ "put-allocstore-require", P_ALLOC_STORE, P_ALLOC_REQUIRE },
+	{ "put-allocstore-repeat", P_ALLOC_STORE, P_ALLOC_STORE },
+	{ "put-allocstore-next", P_ALLOC_STORE, P_LOCK },
+	{ "put-allocstore-fail", P_ALLOC_STORE, P_CLEANUP },
+	{ "del-child-check", P_STORE_CHILD, P_CHECK },
+	{ "del-child-check-ht-changed", P_STORE_CHILD, P_CLEANUP },
+	{ "del-child-check-ht-same", P_STORE_CHILD, P_DOWN },
+	{ "del-child-check-ft", P_STORE_CHILD, P_CAPTURE },
+	{ "kvop-lock", P_LOCK, P_CHECK },
+	{ "kvop-lock-check-ht-changed", P_LOCK, P_CLEANUP },
+	{ "put-lock-ft-capture", P_LOCK, P_CAPTURE },
+	{ "put-lock-ft-makespace", P_LOCK, P_MAKESPACE },
+	{ "put-lock-ft-act", P_LOCK, P_ACT },
+	{ "kvop-check-height-changed", P_CHECK, P_CLEANUP },
+	{ "kvop-check-height-same", P_CHECK, P_DOWN },
+	{ "put-check-ft-capture", P_CHECK, P_CAPTURE },
+	{ "put-check-ft-act", P_CHECK, P_ACT },
+	{ "put-check-ft-makespace", P_CHECK, P_MAKESPACE },
+	{ "put-sanity-makespace", P_SANITY_CHECK, P_MAKESPACE },
+	{ "put-sanity-act", P_SANITY_CHECK, P_ACT },
+	{ "put-sanity-cleanup", P_SANITY_CHECK, P_CLEANUP},
+	{ "put-makespace-capture", P_MAKESPACE, P_CAPTURE },
+	{ "put-makespace-cleanup", P_MAKESPACE, P_CLEANUP },
+	{ "kvop-act", P_ACT, P_CLEANUP },
+	{ "put-del-act", P_ACT, P_CAPTURE },
+	{ "truncate-act-nextdown", P_ACT, P_NEXTDOWN },
+	{ "put-capture", P_CAPTURE, P_CLEANUP},
+	{ "del-capture-freenode", P_CAPTURE, P_FREENODE},
+	{ "del-freenode-cleanup", P_FREENODE, P_CLEANUP },
+	{ "del-freenode-fini", P_FREENODE, P_FINI},
+	{ "kvop-cleanup-setup", P_CLEANUP, P_SETUP },
+	{ "kvop-lockall", P_CLEANUP, P_LOCKALL },
+	{ "kvop-done", P_CLEANUP, P_FINI },
+	{ "kvop-fini", P_FINI, P_DONE },
+};
+
+struct m0_sm_conf btree_conf = {
+	.scf_name      = "btree-conf",
+	.scf_nr_states = ARRAY_SIZE(btree_states),
+	.scf_state     = btree_states,
+	.scf_trans_nr  = ARRAY_SIZE(btree_trans),
+	.scf_trans     = btree_trans
+};
+
 static int bnode_access(struct segaddr *addr, int nxt)
 {
 	/**
@@ -1822,6 +2014,10 @@ M0_INTERNAL int m0_btree_mod_init(void)
 	ndlist_tlist_init(&btree_active_nds);
 	m0_rwlock_init(&list_lock);
 
+	m0_sm_conf_init(&btree_conf);
+	m0_sm_addb2_init(&btree_conf, M0_AVI_BTREE_SM_STATE, 
+			 M0_AVI_BTREE_SM_COUNTER);
+
 	M0_ALLOC_PTR(m);
 	if (m != NULL) {
 		m0_get()->i_moddata[M0_MODULE_BTREE] = m;
@@ -1852,6 +2048,8 @@ M0_INTERNAL void m0_btree_mod_fini(void)
 
 	m0_rwlock_fini(&list_lock);
 	m0_free(mod_get());
+	m0_sm_addb2_fini(&btree_conf);
+	m0_sm_conf_fini(&btree_conf);
 }
 
 /**
@@ -6406,15 +6604,17 @@ static int64_t btree_put_makespace_phase(struct m0_btree_op *bop)
 static int64_t btree_put_kv_tick(struct m0_sm_op *smop)
 {
 	struct m0_btree_op    *bop            = M0_AMB(bop, smop, bo_op);
+	// print log for tx_id from struct bop
 	struct td             *tree           = bop->bo_arbor->t_desc;
 	uint64_t               flags          = bop->bo_flags;
 	struct m0_btree_oimpl *oi             = bop->bo_i;
 	bool                   lock_acquired  = bop->bo_flags & BOF_LOCKALL;
 	int                    vsize_diff     = 0;
 	struct level          *lev;
-
+	// m0_sm_addb2_counter_init(&smop->o_sm);
 	switch (bop->bo_op.o_sm.sm_state) {
 	case P_INIT:
+		// M0_ADDB2_ADD(M0_AVI_BTREE_PROBE, P_INIT);
 		if (M0_FI_ENABLED("already_exists")) {
 			/**
 			 * Return error if failure condition is explicitly
@@ -6435,28 +6635,33 @@ static int64_t btree_put_kv_tick(struct m0_sm_op *smop)
 		else
 			return P_SETUP;
 	case P_COOKIE:
+		// M0_ADDB2_ADD(M0_AVI_BTREE_PROBE, P_COOKIE);
 		if (cookie_is_valid(tree, &bop->bo_rec.r_key.k_cookie) &&
 		    !bnode_isoverflow(oi->i_cookie_node, 0, &bop->bo_rec))
 			return P_LOCK;
 		else
 			return P_SETUP;
 	case P_LOCKALL:
+		// M0_ADDB2_ADD(M0_AVI_BTREE_PROBE, P_LOCKALL);
 		M0_ASSERT(bop->bo_flags & BOF_LOCKALL);
 		return lock_op_init(&bop->bo_op, &bop->bo_i->i_nop,
 				    bop->bo_arbor->t_desc, P_SETUP);
 	case P_SETUP:
+		// M0_ADDB2_ADD(M0_AVI_BTREE_PROBE, P_SETUP);
 		oi->i_height = tree->t_height;
 		memset(&oi->i_level, 0, sizeof oi->i_level);
 		bop->bo_i->i_key_found = false;
 		oi->i_nop.no_op.o_sm.sm_rc = 0;
 		/** Fall through to P_DOWN. */
 	case P_DOWN:
+		// M0_ADDB2_ADD(M0_AVI_BTREE_PROBE, P_DOWN);
 		oi->i_used = 0;
 		M0_SET0(&oi->i_capture);
 		/* Load root node. */
 		return bnode_get(&oi->i_nop, tree, &tree->t_root->n_addr,
 				 P_NEXTDOWN);
 	case P_NEXTDOWN:
+		// M0_ADDB2_ADD(M0_AVI_BTREE_PROBE, P_NEXTDOWN);
 		if (oi->i_nop.no_op.o_sm.sm_rc == 0) {
 			struct slot    node_slot = {};
 			struct segaddr child_node_addr;
@@ -6534,6 +6739,7 @@ static int64_t btree_put_kv_tick(struct m0_sm_op *smop)
 			return m0_sm_op_sub(&bop->bo_op, P_CLEANUP, P_SETUP);
 		}
 	case P_ALLOC_REQUIRE:{
+		// M0_ADDB2_ADD(M0_AVI_BTREE_PROBE, P_ALLOC_REQUIRE);
 		do {
 			int max_ksize = 0;
 			struct level *child_lev;
@@ -6580,6 +6786,7 @@ static int64_t btree_put_kv_tick(struct m0_sm_op *smop)
 		return P_LOCK;
 	}
 	case P_ALLOC_STORE: {
+		// M0_ADDB2_ADD(M0_AVI_BTREE_PROBE, P_ALLOC_STORE);
 		if (oi->i_nop.no_op.o_sm.sm_rc != 0) {
 			if (lock_acquired)
 				lock_op_unlock(tree);
@@ -6633,11 +6840,13 @@ static int64_t btree_put_kv_tick(struct m0_sm_op *smop)
 		return P_ALLOC_REQUIRE;
 	}
 	case P_LOCK:
+		// M0_ADDB2_ADD(M0_AVI_BTREE_PROBE, P_LOCK);
 		if (!lock_acquired)
 			return lock_op_init(&bop->bo_op, &bop->bo_i->i_nop,
 					    bop->bo_arbor->t_desc, P_CHECK);
 		/** Fall through if LOCK is already acquired. */
 	case P_CHECK:
+		// M0_ADDB2_ADD(M0_AVI_BTREE_PROBE, P_CHECK);
 		if (!path_check(oi, tree, &bop->bo_rec.r_key.k_cookie)) {
 			oi->i_trial++;
 			if (oi->i_trial >= MAX_TRIALS) {
@@ -6664,6 +6873,7 @@ static int64_t btree_put_kv_tick(struct m0_sm_op *smop)
 		/** Fall through if path_check is successful. */
 	case P_SANITY_CHECK: {
 		int  rc = 0;
+		// M0_ADDB2_ADD(M0_AVI_BTREE_PROBE, P_SANITY_CHECK);
 		if (oi->i_key_found && bop->bo_opc == M0_BO_PUT)
 			rc = M0_ERR(-EEXIST);
 		else if (!oi->i_key_found && bop->bo_opc == M0_BO_UPDATE &&
@@ -6683,6 +6893,7 @@ static int64_t btree_put_kv_tick(struct m0_sm_op *smop)
 			.s_node = lev->l_node,
 			.s_idx  = lev->l_idx,
 		};
+		// M0_ADDB2_ADD(M0_AVI_BTREE_PROBE, P_MAKESPACE);
 		if (!oi->i_key_found) {
 			M0_ASSERT(bop->bo_opc == M0_BO_PUT ||
 				  (bop->bo_opc == M0_BO_UPDATE &&
@@ -6739,6 +6950,7 @@ static int64_t btree_put_kv_tick(struct m0_sm_op *smop)
 		struct slot          node_slot;
 		int                  rc;
 
+		// M0_ADDB2_ADD(M0_AVI_BTREE_PROBE, P_ACT);
 		lev = &oi->i_level[oi->i_used];
 
 		node_slot.s_node = lev->l_node;
@@ -6789,13 +7001,16 @@ static int64_t btree_put_kv_tick(struct m0_sm_op *smop)
 		return P_CAPTURE;
 	}
 	case P_CAPTURE:
+		// M0_ADDB2_ADD(M0_AVI_BTREE_PROBE, P_CAPTURE);
 		btree_tx_nodes_capture(oi, bop->bo_tx);
 		lock_op_unlock(tree);
 		return m0_sm_op_sub(&bop->bo_op, P_CLEANUP, P_FINI);
 	case P_CLEANUP:
+		// M0_ADDB2_ADD(M0_AVI_BTREE_PROBE, P_CLEANUP);
 		level_cleanup(oi, bop->bo_tx);
 		return m0_sm_op_ret(&bop->bo_op);
-	case P_FINI :
+	case P_FINI:
+		// M0_ADDB2_ADD(M0_AVI_BTREE_PROBE, P_FINI);
 		M0_ASSERT(oi);
 		m0_free(oi);
 		return P_DONE;
@@ -6804,198 +7019,6 @@ static int64_t btree_put_kv_tick(struct m0_sm_op *smop)
 	};
 }
 /* Insert operation section end point */
-
-static struct m0_sm_state_descr btree_states[P_NR] = {
-	[P_INIT] = {
-		.sd_flags   = M0_SDF_INITIAL,
-		.sd_name    = "P_INIT",
-		.sd_allowed = M0_BITS(P_COOKIE, P_SETUP, P_ACT, P_WAITCHECK,
-				      P_TREE_GET, P_DONE),
-	},
-	[P_TREE_GET] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_TREE_GET",
-		.sd_allowed = M0_BITS(P_ACT),
-	},
-	[P_COOKIE] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_COOKIE",
-		.sd_allowed = M0_BITS(P_LOCK, P_SETUP),
-	},
-	[P_SETUP] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_SETUP",
-		.sd_allowed = M0_BITS(P_CLEANUP, P_NEXTDOWN),
-	},
-	[P_LOCKALL] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_LOCKALL",
-		.sd_allowed = M0_BITS(P_SETUP),
-	},
-	[P_DOWN] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_DOWN",
-		.sd_allowed = M0_BITS(P_NEXTDOWN),
-	},
-	[P_NEXTDOWN] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_NEXTDOWN",
-		.sd_allowed = M0_BITS(P_NEXTDOWN, P_ALLOC_REQUIRE,
-				      P_STORE_CHILD, P_SIBLING, P_CLEANUP,
-				      P_LOCK, P_ACT),
-	},
-	[P_SIBLING] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_SIBLING",
-		.sd_allowed = M0_BITS(P_SIBLING, P_LOCK, P_CLEANUP),
-	},
-	[P_ALLOC_REQUIRE] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_ALLOC_REQUIRE",
-		.sd_allowed = M0_BITS(P_ALLOC_STORE, P_LOCK, P_CLEANUP),
-	},
-	[P_ALLOC_STORE] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_ALLOC_STORE",
-		.sd_allowed = M0_BITS(P_ALLOC_REQUIRE, P_ALLOC_STORE, P_LOCK,
-				      P_CLEANUP),
-	},
-	[P_STORE_CHILD] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_STORE_CHILD",
-		.sd_allowed = M0_BITS(P_CHECK, P_CLEANUP, P_DOWN, P_CAPTURE),
-	},
-	[P_LOCK] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_LOCK",
-		.sd_allowed = M0_BITS(P_CHECK, P_MAKESPACE, P_ACT, P_CAPTURE,
-				      P_CLEANUP),
-	},
-	[P_CHECK] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_CHECK",
-		.sd_allowed = M0_BITS(P_CAPTURE, P_MAKESPACE, P_ACT, P_CLEANUP,
-				      P_DOWN),
-	},
-	[P_SANITY_CHECK] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_SANITY_CHECK",
-		.sd_allowed = M0_BITS(P_MAKESPACE, P_ACT, P_CLEANUP),
-	},
-	[P_MAKESPACE] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_MAKESPACE",
-		.sd_allowed = M0_BITS(P_CAPTURE, P_CLEANUP),
-	},
-	[P_ACT] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_ACT",
-		.sd_allowed = M0_BITS(P_CAPTURE, P_CLEANUP, P_NEXTDOWN, P_DONE),
-	},
-	[P_CAPTURE] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_CAPTURE",
-		.sd_allowed = M0_BITS(P_FREENODE, P_CLEANUP),
-	},
-	[P_FREENODE] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_FREENODE",
-		.sd_allowed = M0_BITS(P_CLEANUP, P_FINI),
-	},
-	[P_CLEANUP] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_CLEANUP",
-		.sd_allowed = M0_BITS(P_SETUP, P_LOCKALL, P_FINI),
-	},
-	[P_FINI] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_FINI",
-		.sd_allowed = M0_BITS(P_DONE),
-	},
-	[P_WAITCHECK] = {
-		.sd_flags   = 0,
-		.sd_name    = "P_WAITCHECK",
-		.sd_allowed = M0_BITS(P_WAITCHECK),
-	},
-	[P_DONE] = {
-		.sd_flags   = M0_SDF_TERMINAL,
-		.sd_name    = "P_DONE",
-		.sd_allowed = 0,
-	},
-};
-
-static struct m0_sm_trans_descr btree_trans[] = {
-	{ "open/close-init", P_INIT, P_ACT },
-	{ "open/close-act", P_ACT, P_DONE },
-	{ "create-init-tree_get", P_INIT, P_TREE_GET },
-	{ "create-tree_get-act", P_TREE_GET, P_ACT },
-	{ "close/destroy", P_INIT, P_DONE},
-	{ "close-init-timecheck", P_INIT, P_WAITCHECK},
-	{ "close-timecheck-repeat", P_WAITCHECK, P_WAITCHECK},
-	{ "kvop-init-cookie", P_INIT, P_COOKIE },
-	{ "kvop-init", P_INIT, P_SETUP },
-	{ "kvop-cookie-valid", P_COOKIE, P_LOCK },
-	{ "kvop-cookie-invalid", P_COOKIE, P_SETUP },
-	{ "kvop-setup-failed", P_SETUP, P_CLEANUP },
-	{ "kvop-setup-down-fallthrough", P_SETUP, P_NEXTDOWN },
-	{ "kvop-lockall", P_LOCKALL, P_SETUP },
-	{ "kvop-down", P_DOWN, P_NEXTDOWN },
-	{ "kvop-nextdown-repeat", P_NEXTDOWN, P_NEXTDOWN },
-	{ "put-nextdown-next", P_NEXTDOWN, P_ALLOC_REQUIRE },
-	{ "del-nextdown-load", P_NEXTDOWN, P_STORE_CHILD },
-	{ "get-nextdown-next", P_NEXTDOWN, P_LOCK },
-	{ "truncate-nextdown-act", P_NEXTDOWN, P_ACT },
-	{ "iter-nextdown-sibling", P_NEXTDOWN, P_SIBLING },
-	{ "kvop-nextdown-failed", P_NEXTDOWN, P_CLEANUP },
-	{ "iter-sibling-repeat", P_SIBLING, P_SIBLING },
-	{ "iter-sibling-next", P_SIBLING, P_LOCK },
-	{ "iter-sibling-failed", P_SIBLING, P_CLEANUP },
-	{ "put-alloc-load", P_ALLOC_REQUIRE, P_ALLOC_STORE },
-	{ "put-alloc-next", P_ALLOC_REQUIRE, P_LOCK },
-	{ "put-alloc-fail", P_ALLOC_REQUIRE, P_CLEANUP },
-	{ "put-allocstore-require", P_ALLOC_STORE, P_ALLOC_REQUIRE },
-	{ "put-allocstore-repeat", P_ALLOC_STORE, P_ALLOC_STORE },
-	{ "put-allocstore-next", P_ALLOC_STORE, P_LOCK },
-	{ "put-allocstore-fail", P_ALLOC_STORE, P_CLEANUP },
-	{ "del-child-check", P_STORE_CHILD, P_CHECK },
-	{ "del-child-check-ht-changed", P_STORE_CHILD, P_CLEANUP },
-	{ "del-child-check-ht-same", P_STORE_CHILD, P_DOWN },
-	{ "del-child-check-ft", P_STORE_CHILD, P_CAPTURE },
-	{ "kvop-lock", P_LOCK, P_CHECK },
-	{ "kvop-lock-check-ht-changed", P_LOCK, P_CLEANUP },
-	{ "put-lock-ft-capture", P_LOCK, P_CAPTURE },
-	{ "put-lock-ft-makespace", P_LOCK, P_MAKESPACE },
-	{ "put-lock-ft-act", P_LOCK, P_ACT },
-	{ "kvop-check-height-changed", P_CHECK, P_CLEANUP },
-	{ "kvop-check-height-same", P_CHECK, P_DOWN },
-	{ "put-check-ft-capture", P_CHECK, P_CAPTURE },
-	{ "put-check-ft-makespace", P_LOCK, P_MAKESPACE },
-	{ "put-check-ft-act", P_LOCK, P_ACT },
-	{ "put-sanity-makespace", P_SANITY_CHECK, P_MAKESPACE },
-	{ "put-sanity-act", P_SANITY_CHECK, P_ACT },
-	{ "put-sanity-cleanup", P_SANITY_CHECK, P_CLEANUP},
-	{ "put-makespace-capture", P_MAKESPACE, P_CAPTURE },
-	{ "put-makespace-cleanup", P_MAKESPACE, P_CLEANUP },
-	{ "kvop-act", P_ACT, P_CLEANUP },
-	{ "put-del-act", P_ACT, P_CAPTURE },
-	{ "truncate-act-nextdown", P_ACT, P_NEXTDOWN },
-	{ "put-capture", P_CAPTURE, P_CLEANUP},
-	{ "del-capture-freenode", P_CAPTURE, P_FREENODE},
-	{ "del-freenode-cleanup", P_FREENODE, P_CLEANUP },
-	{ "del-freenode-fini", P_FREENODE, P_FINI},
-	{ "kvop-cleanup-setup", P_CLEANUP, P_SETUP },
-	{ "kvop-lockall", P_CLEANUP, P_LOCKALL },
-	{ "kvop-done", P_CLEANUP, P_FINI },
-	{ "kvop-fini", P_FINI, P_DONE },
-};
-
-static struct m0_sm_conf btree_conf = {
-	.scf_name      = "btree-conf",
-	.scf_nr_states = ARRAY_SIZE(btree_states),
-	.scf_state     = btree_states,
-	.scf_trans_nr  = ARRAY_SIZE(btree_trans),
-	.scf_trans     = btree_trans
-};
 
 /**
  * btree_create_tree_tick function is the main function used to create btree.
@@ -8722,6 +8745,7 @@ M0_INTERNAL void m0_btree_put(struct m0_btree *arbor,
 	bop->bo_rec    = *rec;
 	bop->bo_cb     = *cb;
 	bop->bo_tx     = tx;
+	// print log here for tx_id
 	bop->bo_flags  = 0;
 	bop->bo_seg    = arbor->t_desc->t_seg;
 	bop->bo_i      = NULL;
@@ -8951,6 +8975,14 @@ M0_INTERNAL bool m0_btree_is_empty(struct m0_btree *btree)
 	return (bnode_count_rec(btree->t_desc->t_root) == 0);
 }
 
+M0_INTERNAL void btree_to_tx_map(const struct m0_btree_op *btree_op)
+{
+	uint64_t btree_sm_id = m0_sm_id_get(&btree_op->bo_op.o_sm);
+	if (btree_op->bo_tx != NULL) {
+		uint64_t tx_sm_id = m0_sm_id_get(&btree_op->bo_tx->t_sm);
+		M0_ADDB2_ADD(M0_AVI_BTREE_TO_TX, btree_sm_id, tx_sm_id);
+	}
+}
 #ifndef __KERNEL__
 /**
  *  --------------------------

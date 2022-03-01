@@ -120,10 +120,10 @@ stop_singlenode()
 	systemctl start motr-cleanup
 
 	# remove sanity test sandbox directory
-	if [[ $1 == "cleanup" ]]
-	then
-		rm -rf $SANITY_SANDBOX_DIR
-	fi
+	# if [[ $1 == "cleanup" ]]
+	# then
+	# 	rm -rf $SANITY_SANDBOX_DIR
+	# fi
 
 	check_sys_state
 }
@@ -206,47 +206,47 @@ object_io_test()
 	echo "Running Object IO tests"
 	obj_id1="20:20"
 	obj_id2="20:22"
-	blk_size="4k"
-	blk_count="200"
-	src_file="$SANITY_SANDBOX_DIR/src"
-	dest_file="$SANITY_SANDBOX_DIR/dest"
-        echo $blk_size $blk_count
-	dd if="/dev/urandom" of=$src_file bs=$blk_size count=$blk_count || {
-		error_handling "dd command failed" $?
-	}
-	endpoint_opts="-l $local_endpoint -H $ha_endpoint -p $profile_fid \
-		       -P $process_fid"
-	rm -f $dest_file
-	m0cp $endpoint_opts -o $obj_id1 -s $blk_size -c $blk_count $src_file || {
-		error_handling "Failed to write object" $?
-	}
-	m0cat $endpoint_opts -o $obj_id1 -s $blk_size -c $blk_count $dest_file || {
-		error_handling "Failed to read object" $?
-	}
-	diff $src_file $dest_file || {
-		error_handling "Files differ" $?
-	}
-	m0unlink $endpoint_opts -o $obj_id1 || {
-		error_handling "Failed to delete object" $?
-	}
-	rm -f $dest_file
+	# blk_size="4k"
+	# blk_count="200"
+	# src_file="$SANITY_SANDBOX_DIR/src"
+	# dest_file="$SANITY_SANDBOX_DIR/dest"
+        # echo $blk_size $blk_count
+	# dd if="/dev/urandom" of=$src_file bs=$blk_size count=$blk_count || {
+	# 	error_handling "dd command failed" $?
+	# }
+	# endpoint_opts="-l $local_endpoint -H $ha_endpoint -p $profile_fid \
+	# 	       -P $process_fid"
+	# rm -f $dest_file
+	# m0cp $endpoint_opts -o $obj_id1 -s $blk_size -c $blk_count $src_file || {
+	# 	error_handling "Failed to write object" $?
+	# }
+	# m0cat $endpoint_opts -o $obj_id1 -s $blk_size -c $blk_count $dest_file || {
+	# 	error_handling "Failed to read object" $?
+	# }
+	# diff $src_file $dest_file || {
+	# 	error_handling "Files differ" $?
+	# }
+	# m0unlink $endpoint_opts -o $obj_id1 || {
+	# 	error_handling "Failed to delete object" $?
+	# }
+	# rm -f $dest_file
 
-	m0touch $endpoint_opts -o $obj_id2 || {
-		error_handling "Failed to create object" $?
-	}
-	m0cp $endpoint_opts -o $obj_id2 -s $blk_size -c $blk_count $src_file -u || {
-		error_handling "Failed to write object" $?
-	}
-	m0cat $endpoint_opts -o $obj_id2 -s $blk_size -c $blk_count $dest_file || {
-		error_handling "Failed to read object" $?
-	}
-	diff $src_file $dest_file || {
-		error_handling "Files differ" $?
-	}
-	m0unlink $endpoint_opts -o $obj_id2 || {
-		error_handling "Failed to delete object" $?
-	}
-	rm -f $dest_file $src_file
+	# m0touch $endpoint_opts -o $obj_id2 || {
+	# 	error_handling "Failed to create object" $?
+	# }
+	# m0cp $endpoint_opts -o $obj_id2 -s $blk_size -c $blk_count $src_file -u || {
+	# 	error_handling "Failed to write object" $?
+	# }
+	# m0cat $endpoint_opts -o $obj_id2 -s $blk_size -c $blk_count $dest_file || {
+	# 	error_handling "Failed to read object" $?
+	# }
+	# diff $src_file $dest_file || {
+	# 	error_handling "Files differ" $?
+	# }
+	# m0unlink $endpoint_opts -o $obj_id2 || {
+	# 	error_handling "Failed to delete object" $?
+	# }
+	# rm -f $dest_file $src_file
 
 	blk_size_dd="1M"
 	blk_size="1m"
@@ -348,8 +348,8 @@ run_tests()
 {
 	# Run litmus test
 	object_io_test
-	kv_test
-	m0spiel_test
+	# kv_test
+	# m0spiel_test
 }
 
 main()

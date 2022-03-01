@@ -29,12 +29,17 @@
 #include "xcode/xcode_attr.h"
 #include "lib/errno.h"
 #include "fid/fid.h"  /** struct m0_fid */
+#include "btree/btree_addb2.h"
+#include "addb2/addb2.h"
 
 /**
  * @defgroup btree
  *
  * @{
  */
+
+/* btree's state configuration */
+extern struct m0_sm_conf btree_conf;
 
 struct m0_be_tx;
 struct m0_be_tx_credit;
@@ -700,17 +705,20 @@ M0_INTERNAL int64_t m0_btree_lrulist_purge(int64_t size);
 M0_INTERNAL int64_t m0_btree_lrulist_purge_check(enum m0_btree_purge_user user,
 						 int64_t size);
 
+M0_INTERNAL void btree_to_tx_map(const struct m0_btree_op *btree_op);
 
 #define M0_BTREE_OP_SYNC_WITH_RC(bop, action)                           \
 	({                                                              \
 		struct m0_btree_op *__bopp = (bop);                     \
 		int32_t             __op_rc;                            \
-									\
+		M0_ADDB2_ADD(M0_AVI_BTREE_PROBE, M0_AVI_BTREE_STARTED); \
 		m0_sm_group_init(&__bopp->bo_sm_group);                 \
 		m0_sm_group_lock(&__bopp->bo_sm_group);                 \
 		m0_sm_op_exec_init(&__bopp->bo_op_exec);                \
 									\
 		action;                                                 \
+		m0_sm_addb2_counter_init(&__bopp->bo_op.o_sm);          \
+		btree_to_tx_map(__bopp);                                \
 		m0_sm_op_tick(&__bopp->bo_op);                          \
 		__op_rc = __bopp->bo_op.o_sm.sm_rc;                     \
 		m0_sm_op_fini(&__bopp->bo_op);                          \
@@ -718,6 +726,7 @@ M0_INTERNAL int64_t m0_btree_lrulist_purge_check(enum m0_btree_purge_user user,
 		m0_sm_op_exec_fini(&__bopp->bo_op_exec);                \
 		m0_sm_group_unlock(&__bopp->bo_sm_group);               \
 		m0_sm_group_fini(&__bopp->bo_sm_group);                 \
+		M0_ADDB2_ADD(M0_AVI_BTREE_PROBE, M0_AVI_BTREE_FINISHED);\
 		__op_rc;                                                \
 	})
 

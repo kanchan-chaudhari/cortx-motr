@@ -506,6 +506,8 @@ class ADDB2PP:
             "s3-request-uid"       : (ADDB2PP.s3req_uid, "s3_request_uid"),
             "s3-request-state"     : (partial(ADDB2PP.p_yaml_translate, {"id": "s3_request_id"}), "s3_request_state"),
             "s3-measurement"       : (ADDB2PP.p_s3_msrm, "s3_measurement"),
+            "btree-layer"          : (ADDB2PP.p_sm_req, "btree_layer"),
+            "btree-to-tx"          : (ADDB2PP.p_1_to_2, "btree_to_tx"),
         }
 
     def consume_record(self, rec):

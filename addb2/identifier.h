@@ -99,6 +99,16 @@ enum m0_addb2_value_id {
 	M0_AVI_LONG_LOCK,
 	/** Measurement: generic attribute. */
 	M0_AVI_ATTR,
+	/** Btree */
+	M0_AVI_BTREE_RANGE_START,
+	M0_AVI_BTREE_PROBE,
+	/** Measurement: btree SM to tx SM. */
+	M0_AVI_BTREE_TO_TX,
+	/** Measurement: btree state transition. */
+	M0_AVI_BTREE_SM_STATE,
+	M0_AVI_BTREE_SM_COUNTER,
+	M0_AVI_BTREE_SM_COUNTER_END = M0_AVI_BTREE_SM_COUNTER + 0x100,
+	
 
 	M0_AVI_LIB_RANGE_START     = 0x3000,
 	/** Measurement: memory allocation. */

@@ -92,6 +92,7 @@
 #include "xcode/xcode.h"
 #include "scripts/systemtap/kem/kem_id.h"
 #include "addb2/addb2_internal.h"
+#include "btree/btree_addb2.h"
 #include "lib/trace.h"
 
 enum {
@@ -940,6 +941,18 @@ static void stob_io_req_state(struct m0_addb2__context *ctx,
 				    id, buf));
 }
 
+extern struct m0_sm_conf btree_conf;
+static void btree_state(struct m0_addb2__context *ctx, const uint64_t *v,
+			 char *buf)
+{
+	sm_state(&btree_conf, ctx, v, buf);
+}
+
+static void btree_state_counter(struct m0_addb2__context *ctx, char *buf)
+{
+	sm_trans(&btree_conf, "btree-state", ctx, buf);
+}
+
 static void attr(struct m0_addb2__context *ctx, const uint64_t *v, char *buf)
 {
 	/**
@@ -1233,6 +1246,13 @@ struct m0_addb2__id_intrp ids[] = {
 	  { "bulk_id", "state" } },
 	{ M0_AVI_ATTR, "attr", { &dec, &attr, &skip },
 	  { "entity_id", NULL, NULL } },
+	{ M0_AVI_BTREE_PROBE, "btree-probe", { &dec}, { "state"} },
+	{ M0_AVI_BTREE_SM_STATE, "btree-layer", { &btree_state, SKIP2  } },
+	{ M0_AVI_BTREE_TO_TX, "btree-to-tx", { &dec, &dec},
+	  { "btree_id", "tx_id" } },
+	{ M0_AVI_BTREE_SM_COUNTER, "",
+	  .ii_repeat = M0_AVI_BTREE_SM_COUNTER_END - M0_AVI_BTREE_SM_COUNTER,
+	  .ii_spec   = &btree_state_counter },
 	{ M0_AVI_NODATA,          "nodata" },
 };
 

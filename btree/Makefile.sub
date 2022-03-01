@@ -1,6 +1,7 @@
 nobase_motr_include_HEADERS += \
                             btree/btree.h \
-                            btree/internal.h
+                            btree/internal.h \
+                            btree/btree_addb2.h
 
 motr_libmotr_la_SOURCES  += \
                             btree/btree.c
