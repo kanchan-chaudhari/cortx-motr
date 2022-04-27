@@ -1419,9 +1419,9 @@ static int64_t lru_space_used;
 
 /** Lru used space watermark default values. */
 enum lru_used_space_watermark{
-	LUSW_LOW    = 2 * 1024 * 1024 * 1024ULL,
-	LUSW_TARGET = 3 * 1024 * 1024 * 1024ULL,
-	LUSW_HIGH   = 4 * 1024 * 1024 * 1024ULL,
+	LUSW_LOW    = 2 * 100 * 1 * 1024ULL,
+	LUSW_TARGET = 3 * 100 * 1 * 1024ULL,
+	LUSW_HIGH   = 1 * 1024 * 1 * 1024ULL,
 };
 
 /**
@@ -8695,8 +8695,8 @@ M0_INTERNAL int64_t m0_btree_lrulist_purge_check(enum m0_btree_purge_user user,
 			      M0_BTREE_TRICKLE_NUM_NODES : 0);
 	M0_LOG(M0_ALWAYS, " Above critical purge, User=%s requested size="
 	       "%"PRId64" used space=%"PRIu64" purged size="
-	       "%"PRIu64, user == M0_PU_BTREE ? "btree" : "external", size,
-	       lru_space_used, purged_size);
+	       "%"PRIu64" lru_trickle_release_mode=%s", user == M0_PU_BTREE ? "btree" : "external", size,
+	       lru_space_used, purged_size, lru_trickle_release_mode ? "on" : "off");
 	return purged_size;
 }
 #endif
