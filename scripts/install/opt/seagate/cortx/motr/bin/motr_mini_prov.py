@@ -592,9 +592,9 @@ def update_btree_watermarks(self):
                 min_mem_limit_for_ios = calc_size(self, l_min)
 
     #TBD: If the performance is seen to be low, please tune these parameters.
-    wm_low  = int(min_mem_limit_for_ios * 0.40)
-    wm_targ = int(min_mem_limit_for_ios * 0.50)
-    wm_high = int(min_mem_limit_for_ios * 0.70)
+    wm_low  = int(min_mem_limit_for_ios * 0.20)
+    wm_targ = int(min_mem_limit_for_ios * 0.30)
+    wm_high = int(min_mem_limit_for_ios * 0.50)
 
     update_watermark_in_config(self, "WM_LOW", wm_low)
     update_watermark_in_config(self, "WM_TARGET", wm_targ)
