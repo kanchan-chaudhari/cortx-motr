@@ -633,9 +633,9 @@ enum {
 	CRC_VALUE_SIZE           = sizeof(uint64_t),
 };
 
-#define IS_INTERNAL_NODE(node) bnode_level(node) > 0 ? true : false
+#define IS_INTERNAL_NODE(node) (bnode_level(node) > 0 ? true : false)
 
-#define IS_EMBEDDED_INDIRECT(node) bnode_addrtype_get(node) == EMBEDDED_INDIRECT
+#define IS_EMBEDDED_INDIRECT(node) (bnode_addrtype_get(node) == EMBEDDED_INDIRECT)
 
 #define M0_BTREE_TX_CAPTURE(tx, seg, ptr, size)                              \
 			   m0_be_tx_capture(tx, &M0_BE_REG(seg, size, ptr))
